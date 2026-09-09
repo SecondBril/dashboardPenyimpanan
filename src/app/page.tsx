@@ -228,12 +228,16 @@ export default function DashboardPage() {
   };
 
   // Confirm Transfer Execution
-  const handleConfirmTransfer = async (operation: TransferOperation) => {
-    if (!transferModalData.file || !transferModalData.destAccount) return;
-
+  const handleConfirmTransfer = async (
+    operation: TransferOperation, 
+    customDestAccount?: AccountInfo, 
+    customDestFolderId?: string | null
+  ) => {
     const file = transferModalData.file;
-    const destAccount = transferModalData.destAccount;
-    const destFolderId = transferModalData.destFolderId;
+    const destAccount = customDestAccount || transferModalData.destAccount;
+    const destFolderId = customDestFolderId !== undefined ? customDestFolderId : transferModalData.destFolderId;
+
+    if (!file || !destAccount) return;
 
     try {
       const res = await fetch('/api/v1/transfer', {
@@ -243,7 +247,7 @@ export default function DashboardPage() {
           sourceAccountId: file.accountId,
           destAccountId: destAccount.id,
           sourceFileId: file.providerFileId || (file.id.includes(':') ? file.id.split(':').slice(1).join(':') : file.id),
-          destParentId: destFolderId ? (destFolderId.includes(':') ? destFolderId.split(':').slice(1).join(':') : destFolderId) : null,
+          destParentId: destFolderId && destFolderId !== 'root' ? (destFolderId.includes(':') ? destFolderId.split(':').slice(1).join(':') : destFolderId) : null,
           operation,
         }),
       });
@@ -263,6 +267,17 @@ export default function DashboardPage() {
     } catch (err: any) {
       alert(`Gagal memulai transfer: ${err?.message}`);
     }
+  };
+
+  // Open Direct Transfer Modal (for Mobile or Non-DND users)
+  const handleOpenFileTransfer = (file: UnifiedFile) => {
+    const otherAccount = accounts.find((a) => a.id !== file.accountId) || null;
+    setTransferModalData({
+      isOpen: true,
+      file,
+      destAccount: otherAccount,
+      destFolderId: null,
+    });
   };
 
   // Manual Trigger Smart Classify
@@ -350,6 +365,11 @@ export default function DashboardPage() {
     (j) => j.status === 'queued' || j.status === 'downloading' || j.status === 'uploading'
   ).length;
 
+  const accountsCount = {
+    gdrive: accounts.filter((a) => a.provider === 'google_drive').length || 3,
+    onedrive: accounts.filter((a) => a.provider === 'onedrive').length || 1,
+  };
+
   return (
     <DndContext
       sensors={sensors}
@@ -369,6 +389,7 @@ export default function DashboardPage() {
           isRefreshing={isRefreshingAll}
           viewMode={viewMode}
           onToggleViewMode={() => setViewMode(viewMode === 'grid' ? 'tabs' : 'grid')}
+          accountsCount={accountsCount}
         />
 
         {/* In-App Notification Popover */}
@@ -383,17 +404,17 @@ export default function DashboardPage() {
         />
 
         {/* Main Content Area */}
-        <main className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 w-full flex-1 flex flex-col">
+        <main className="max-w-[1920px] mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6 w-full flex-1 flex flex-col">
           
           {/* Storage Quota Summary Visualizer */}
           <StorageSummaryBar summary={storageSummary} />
 
           {/* Quick Tip Banner */}
-          <div className="mb-4 px-4 py-2.5 rounded-xl glass-panel border border-white/5 bg-gradient-to-r from-blue-900/20 via-indigo-900/20 to-purple-900/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-300">
+          <div className="mb-4 px-3 sm:px-4 py-2.5 rounded-xl glass-panel border border-white/5 bg-gradient-to-r from-blue-900/20 via-indigo-900/20 to-purple-900/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-300">
             <div className="flex items-center gap-2">
-              <span className="p-1 rounded-md bg-blue-500/20 text-cyan-300 font-bold">TIPS</span>
-              <span>
-                Tarik (drag) file dari kolom akun manapun dan letakkan (drop) ke kolom akun lain untuk transfer streaming antar provider.
+              <span className="p-1 rounded-md bg-blue-500/20 text-cyan-300 font-bold text-[10px]">TIPS</span>
+              <span className="text-[11px] sm:text-xs">
+                Tarik file antar kolom atau gunakan menu titik tiga (•••) untuk memindahkan/menyalin file antar provider.
               </span>
             </div>
             <div className="flex items-center gap-2 text-[11px] text-slate-400 shrink-0">
@@ -402,30 +423,36 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Tab buttons for mobile or single-tab mode */}
-          {viewMode === 'tabs' && (
-            <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-3 no-scrollbar">
-              {accounts.map((acc) => (
-                <button
-                  key={acc.id}
-                  onClick={() => setSelectedTabAccountId(acc.id)}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
-                    selectedTabAccountId === acc.id
-                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                      : 'glass-panel text-slate-400 hover:text-white border border-white/5'
-                  }`}
-                >
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: acc.colorCode }}
-                  />
-                  <span>{acc.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Tab switcher: always on in Tab mode, and quick account selector on Mobile */}
+          <div className={`items-center gap-2 overflow-x-auto pb-3 mb-3 no-scrollbar ${viewMode === 'grid' ? 'flex lg:hidden' : 'flex'}`}>
+            {accounts.map((acc) => (
+              <button
+                key={acc.id}
+                onClick={() => {
+                  setSelectedTabAccountId(acc.id);
+                  if (viewMode === 'grid') {
+                    setViewMode('tabs');
+                  }
+                }}
+                className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
+                  selectedTabAccountId === acc.id
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 ring-1 ring-blue-400/50'
+                    : 'glass-panel text-slate-300 hover:text-white border border-white/10'
+                }`}
+              >
+                <span
+                  className="h-2.5 w-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: acc.colorCode }}
+                />
+                <span className="truncate max-w-[130px] sm:max-w-none">{acc.label}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-black/20 text-slate-300 font-mono">
+                  {accountFiles[acc.id]?.length ?? 0}
+                </span>
+              </button>
+            ))}
+          </div>
 
-          {/* Multi-Account File Browser */}
+          {/* Multi-Account File Browser (4 columns on desktop, responsive for mobile) */}
           {viewMode === 'grid' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 flex-1">
               {accounts.map((account) => (
@@ -446,6 +473,7 @@ export default function DashboardPage() {
                   onReplaceContent={(f) => setReplaceContentTarget(f)}
                   onDeleteFile={handleDeleteFile}
                   onClassifyFile={handleClassifyFile}
+                  onTransferFile={handleOpenFileTransfer}
                 />
               ))}
             </div>
@@ -471,6 +499,7 @@ export default function DashboardPage() {
                     onReplaceContent={(f) => setReplaceContentTarget(f)}
                     onDeleteFile={handleDeleteFile}
                     onClassifyFile={handleClassifyFile}
+                    onTransferFile={handleOpenFileTransfer}
                   />
                 ))}
             </div>
@@ -499,6 +528,7 @@ export default function DashboardPage() {
           file={transferModalData.file}
           destAccount={transferModalData.destAccount}
           destFolderId={transferModalData.destFolderId}
+          allAccounts={accounts}
           onConfirm={handleConfirmTransfer}
         />
 

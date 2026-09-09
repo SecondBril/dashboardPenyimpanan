@@ -6,8 +6,7 @@ export class OneDriveAdapter implements StorageAdapter {
   accountId: string;
   accountLabel: string;
   private client: Client;
-  private static cachedAccessToken: string | null = null;
-  private static tokenExpiresAt: number = 0;
+  private static tokenCache = new Map<string, { token: string; expiresAt: number }>();
   private providedAccessToken?: string;
   private refreshToken?: string;
 
@@ -15,7 +14,9 @@ export class OneDriveAdapter implements StorageAdapter {
     this.accountId = accountId;
     this.accountLabel = accountLabel;
     this.providedAccessToken = accessToken;
-    this.refreshToken = refreshToken || process.env.MICROSOFT_REFRESH_TOKEN;
+    this.refreshToken = refreshToken 
+      || process.env[`MICROSOFT_REFRESH_TOKEN_${accountId}`]
+      || process.env.MICROSOFT_REFRESH_TOKEN;
 
     this.client = Client.init({
       authProvider: async (done) => {
@@ -35,21 +36,21 @@ export class OneDriveAdapter implements StorageAdapter {
       return this.providedAccessToken;
     }
 
-    // Check if cached token is still valid (with 5-minute safety buffer)
-    const now = Date.now();
-    if (OneDriveAdapter.cachedAccessToken && OneDriveAdapter.tokenExpiresAt > now + 300000) {
-      return OneDriveAdapter.cachedAccessToken;
+    // Check if cached token for this specific account is still valid (with 5-minute safety buffer)
+    const cached = OneDriveAdapter.tokenCache.get(this.accountId);
+    if (cached && cached.expiresAt > Date.now() + 300000) {
+      return cached.token;
     }
 
     // If we have a refresh token, fetch a new access token
     if (this.refreshToken) {
-      const clientId = process.env.MICROSOFT_CLIENT_ID;
-      const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
-      const tenantId = process.env.MICROSOFT_TENANT_ID || 'common';
+      const clientId = process.env[`MICROSOFT_CLIENT_ID_${this.accountId}`] || process.env.MICROSOFT_CLIENT_ID;
+      const clientSecret = process.env[`MICROSOFT_CLIENT_SECRET_${this.accountId}`] || process.env.MICROSOFT_CLIENT_SECRET;
+      const tenantId = process.env[`MICROSOFT_TENANT_ID_${this.accountId}`] || process.env.MICROSOFT_TENANT_ID || 'common';
 
       if (!clientId || !clientSecret) {
         if (this.providedAccessToken) return this.providedAccessToken;
-        throw new Error('MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET are required to refresh Microsoft token');
+        throw new Error(`MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET are required to refresh Microsoft token for ${this.accountLabel}`);
       }
 
       const params = new URLSearchParams({
@@ -71,13 +72,15 @@ export class OneDriveAdapter implements StorageAdapter {
       if (!res.ok) {
         const errText = await res.text();
         if (this.providedAccessToken) return this.providedAccessToken;
-        throw new Error(`Failed to refresh Microsoft Graph token: ${errText}`);
+        throw new Error(`Failed to refresh Microsoft Graph token for ${this.accountLabel}: ${errText}`);
       }
 
       const data = await res.json();
-      OneDriveAdapter.cachedAccessToken = data.access_token;
       const expiresInSec = Number(data.expires_in) || 3600;
-      OneDriveAdapter.tokenExpiresAt = now + expiresInSec * 1000;
+      OneDriveAdapter.tokenCache.set(this.accountId, {
+        token: data.access_token,
+        expiresAt: Date.now() + expiresInSec * 1000,
+      });
 
       if (data.refresh_token) {
         this.refreshToken = data.refresh_token;
@@ -90,19 +93,20 @@ export class OneDriveAdapter implements StorageAdapter {
       return this.providedAccessToken;
     }
 
-    throw new Error('No Microsoft Access Token or Refresh Token available');
+    throw new Error(`No Microsoft Access Token or Refresh Token available for ${this.accountLabel}`);
   }
 
   async listFiles(folderId: string | null = null): Promise<UnifiedFile[]> {
-    const endpoint = folderId && folderId !== 'root'
-      ? `/me/drive/items/${folderId}/children`
+    const rawFolderId = folderId ? this.extractRawId(folderId) : null;
+    const endpoint = rawFolderId && rawFolderId !== 'root'
+      ? `/me/drive/items/${rawFolderId}/children`
       : `/me/drive/root/children`;
 
     const res = await this.client.api(endpoint)
       .select('id,name,size,file,folder,lastModifiedDateTime,webUrl,@microsoft.graph.downloadUrl,parentReference')
       .get();
 
-    return (res.value || []).map((item: any) => this.mapToFile(item, folderId));
+    return (res.value || []).map((item: any) => this.mapToFile(item, rawFolderId));
   }
 
   private extractRawId(id: string): string {
@@ -176,16 +180,90 @@ export class OneDriveAdapter implements StorageAdapter {
 
   async downloadStream(fileId: string): Promise<Buffer> {
     const rawId = this.extractRawId(fileId);
-    const item = await this.client.api(`/me/drive/items/${rawId}`)
-      .select('@microsoft.graph.downloadUrl')
-      .get();
+    const item = await this.client.api(`/me/drive/items/${rawId}`).get();
     
-    const downloadUrl = item['@microsoft.graph.downloadUrl'];
-    if (!downloadUrl) throw new Error('OneDrive download URL not available');
+    if (item.folder) {
+      throw new Error(`Item "${item.name}" adalah folder, bukan file tunggal. Pindahkan folder melalui transfer struktural.`);
+    }
 
-    const res = await fetch(downloadUrl);
-    const arrayBuf = await res.arrayBuffer();
-    return Buffer.from(arrayBuf);
+    // 1. Direct downloadUrl if provided by Graph
+    const downloadUrl = item['@microsoft.graph.downloadUrl'];
+    if (downloadUrl) {
+      try {
+        const res = await fetch(downloadUrl);
+        if (res.ok) {
+          const arrayBuf = await res.arrayBuffer();
+          return Buffer.from(arrayBuf);
+        }
+      } catch (fetchErr) {
+        console.warn(`Direct downloadUrl fetch failed for ${item.name}:`, fetchErr);
+      }
+    }
+
+    // 2. Direct fetch from Graph /content endpoint with Authorization header (follows 302 redirects)
+    try {
+      const token = await this.getValidAccessToken();
+      const contentRes = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${rawId}/content`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (contentRes.ok) {
+        const arrayBuf = await contentRes.arrayBuffer();
+        return Buffer.from(arrayBuf);
+      }
+    } catch (graphFetchErr) {
+      console.warn(`Direct Graph /content fetch failed for ${item.name}:`, graphFetchErr);
+    }
+
+    // 3. Fallback: Graph SDK .get() and convert any stream type (Web ReadableStream or Node Stream) to Buffer
+    const responseStream = await this.client.api(`/me/drive/items/${rawId}/content`).get();
+    return await this.streamToBuffer(responseStream);
+  }
+
+  private async streamToBuffer(stream: any): Promise<Buffer> {
+    if (!stream) return Buffer.alloc(0);
+    if (Buffer.isBuffer(stream)) return stream;
+    if (stream instanceof ArrayBuffer) return Buffer.from(stream);
+    if (typeof stream === 'string') return Buffer.from(stream, 'utf-8');
+
+    // Web ReadableStream (has getReader method)
+    if (typeof stream.getReader === 'function') {
+      const reader = stream.getReader();
+      const chunks: Uint8Array[] = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(value);
+      }
+      return Buffer.concat(chunks);
+    }
+
+    // Node.js Readable stream or AsyncIterable (has Symbol.asyncIterator)
+    if (typeof stream[Symbol.asyncIterator] === 'function') {
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      return Buffer.concat(chunks);
+    }
+
+    // Node.js stream with .on('data')
+    if (typeof stream.on === 'function') {
+      return new Promise<Buffer>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        stream.on('data', (chunk: any) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        stream.on('end', () => resolve(Buffer.concat(chunks)));
+        stream.on('error', reject);
+      });
+    }
+
+    try {
+      return Buffer.from(stream);
+    } catch {
+      throw new Error(`Unable to convert stream of type ${typeof stream} to Buffer`);
+    }
   }
 
   async getStorageQuota(): Promise<StorageQuota> {

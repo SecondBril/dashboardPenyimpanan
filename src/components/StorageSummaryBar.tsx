@@ -47,9 +47,9 @@ export const StorageSummaryBar: React.FC<StorageSummaryBarProps> = ({ summary })
               <Database className="h-4 w-4 text-blue-400" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  Total Kapasitas Gabungan (4 Akun)
+                  Total Kapasitas Gabungan ({summary.accounts.length} Akun)
                 </span>
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                   <ShieldCheck className="h-3 w-3" />
@@ -58,7 +58,7 @@ export const StorageSummaryBar: React.FC<StorageSummaryBarProps> = ({ summary })
               </div>
               <p className="text-lg sm:text-xl font-extrabold text-white">
                 {formatBytes(summary.totalUsedBytes)}{' '}
-                <span className="text-sm font-normal text-slate-400">
+                <span className="text-xs sm:text-sm font-normal text-slate-400">
                   terpakai dari {formatBytes(summary.totalLimitBytes)}
                 </span>
               </p>
@@ -80,14 +80,14 @@ export const StorageSummaryBar: React.FC<StorageSummaryBarProps> = ({ summary })
         </div>
       </div>
 
-      {/* 4 Individual Account Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+      {/* Individual Account Cards Responsive Grid (fits 4 accounts smoothly) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-3">
         {summary.accounts.map(({ account, quota }) => {
           const isGoogle = account.provider === 'google_drive';
           return (
             <div
               key={account.id}
-              className="glass-panel rounded-xl p-3.5 border border-white/5 hover:border-white/15 transition-all shadow-md group relative overflow-hidden"
+              className="glass-panel rounded-xl p-3 sm:p-3.5 border border-white/5 hover:border-white/15 transition-all shadow-md group relative overflow-hidden"
             >
               {/* Subtle top indicator bar matching account color */}
               <div

@@ -39,7 +39,7 @@ export const DEFAULT_ACCOUNTS: AccountInfo[] = [
     id: 'a0000000-0000-0000-0000-000000000004',
     provider: 'onedrive',
     label: 'OneDrive D (Pribadi)',
-    email: 'onedrive.personal@live.com',
+    email: 'personal@outlook.com',
     storageUsedBytes: 21474836480, // 20 GB
     storageLimitBytes: 107374182400, // 100 GB
     colorCode: '#0284c7', // Sky blue
@@ -50,12 +50,12 @@ export const DEFAULT_ACCOUNTS: AccountInfo[] = [
 export class AdapterFactory {
   private static adapterCache = new Map<string, StorageAdapter>();
 
-  public static getAdapter(accountId: string): StorageAdapter {
+  public static getAdapter(accountId: string, customAccount?: AccountInfo): StorageAdapter {
     if (this.adapterCache.has(accountId)) {
       return this.adapterCache.get(accountId)!;
     }
 
-    const account = DEFAULT_ACCOUNTS.find((a) => a.id === accountId);
+    const account = customAccount || DEFAULT_ACCOUNTS.find((a) => a.id === accountId);
     if (!account) {
       throw new Error(`Unknown account ID: ${accountId}`);
     }
@@ -90,8 +90,10 @@ export class AdapterFactory {
 
     // Production mode with Microsoft Graph (OneDrive)
     if (account.provider === 'onedrive') {
-      const accessToken = process.env.MICROSOFT_ACCESS_TOKEN || '';
-      const refreshToken = process.env.MICROSOFT_REFRESH_TOKEN || '';
+      const specificAccess = process.env[`MICROSOFT_ACCESS_TOKEN_${account.id}`];
+      const specificRefresh = process.env[`MICROSOFT_REFRESH_TOKEN_${account.id}`];
+      const accessToken = specificAccess || process.env.MICROSOFT_ACCESS_TOKEN || '';
+      const refreshToken = specificRefresh || process.env.MICROSOFT_REFRESH_TOKEN || '';
       const validAccess = accessToken && !accessToken.startsWith('your-') ? accessToken : undefined;
       const validRefresh = refreshToken && !refreshToken.startsWith('your-') ? refreshToken : undefined;
 

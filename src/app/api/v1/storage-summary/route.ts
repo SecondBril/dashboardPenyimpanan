@@ -1,15 +1,18 @@
 import { NextResponse } from 'next/server';
 import { AdapterFactory, DEFAULT_ACCOUNTS } from '@/lib/storage/factory';
+import { fetchAccountsFromDb } from '@/lib/supabase';
 
 export async function GET() {
   try {
     let totalUsed = 0;
     let totalLimit = 0;
 
+    const baseAccounts = await fetchAccountsFromDb(DEFAULT_ACCOUNTS);
+
     const accountSummaries = await Promise.all(
-      DEFAULT_ACCOUNTS.map(async (acc) => {
+      baseAccounts.map(async (acc) => {
         try {
-          const adapter = AdapterFactory.getAdapter(acc.id);
+          const adapter = AdapterFactory.getAdapter(acc.id, acc);
           const quota = await adapter.getStorageQuota();
           totalUsed += quota.usedBytes;
           totalLimit += quota.limitBytes;

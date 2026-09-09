@@ -1,11 +1,20 @@
 import { NotificationItem, ClassificationJob } from '../storage/types';
 import { TransferEngine } from '../transfer/transfer-engine';
+import { 
+  fetchNotificationsFromDb, 
+  insertNotificationToDb, 
+  markNotificationReadInDb, 
+  markAllNotificationsReadInDb,
+  fetchClassificationJobsFromDb,
+  insertClassificationJobToDb,
+  updateClassificationJobInDb 
+} from '../supabase';
 
 const DEFAULT_NOTIFICATIONS: NotificationItem[] = [
   {
     id: 'notif_1',
     title: 'Multi-Cloud Hub Siap Digunakan',
-    message: '3 akun Google Drive dan 1 akun OneDrive terhubung dalam dashboard terpadu.',
+    message: '3 akun Google Drive dan 2 akun OneDrive terhubung dalam dashboard terpadu.',
     type: 'info',
     channel: 'in_app',
     isRead: false,
@@ -15,7 +24,9 @@ const DEFAULT_NOTIFICATIONS: NotificationItem[] = [
 
 declare global {
   var __notificationsStore: NotificationItem[] | undefined;
+  var __notificationsInitialized: boolean | undefined;
   var __classificationJobsStore: ClassificationJob[] | undefined;
+  var __classificationJobsInitialized: boolean | undefined;
 }
 
 function getNotificationsStore(): NotificationItem[] {
@@ -33,7 +44,25 @@ export function getClassificationJobsStore(): ClassificationJob[] {
 }
 
 export class Notifier {
+  public static async initFromDb(): Promise<void> {
+    if (!global.__notificationsInitialized) {
+      const dbNotifs = await fetchNotificationsFromDb(DEFAULT_NOTIFICATIONS);
+      global.__notificationsStore = dbNotifs;
+      global.__notificationsInitialized = true;
+    }
+    if (!global.__classificationJobsInitialized) {
+      const dbJobs = await fetchClassificationJobsFromDb();
+      if (dbJobs.length > 0) {
+        global.__classificationJobsStore = dbJobs;
+      }
+      global.__classificationJobsInitialized = true;
+    }
+  }
+
   public static getNotifications(): NotificationItem[] {
+    if (!global.__notificationsInitialized) {
+      this.initFromDb().catch(() => {});
+    }
     return getNotificationsStore();
   }
 
@@ -46,6 +75,7 @@ export class Notifier {
     const item = store.find((n) => n.id === id);
     if (!item) return false;
     item.isRead = true;
+    markNotificationReadInDb(id).catch(() => {});
     return true;
   }
 
@@ -53,6 +83,7 @@ export class Notifier {
     getNotificationsStore().forEach((n) => {
       n.isRead = true;
     });
+    markAllNotificationsReadInDb().catch(() => {});
   }
 
   public static async notify(item: Omit<NotificationItem, 'id' | 'createdAt' | 'isRead'>): Promise<NotificationItem> {
@@ -64,6 +95,7 @@ export class Notifier {
     };
 
     getNotificationsStore().unshift(newNotif);
+    insertNotificationToDb(newNotif).catch(() => {});
 
     // If Telegram is configured, send external notification
     if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
@@ -111,6 +143,7 @@ export class Notifier {
       });
 
       job.action = 'undone';
+      updateClassificationJobInDb(job.id, { action: 'undone' }).catch(() => {});
 
       await this.notify({
         title: 'Undo Berhasil',
@@ -145,6 +178,7 @@ export class Notifier {
       });
 
       job.action = 'auto_moved';
+      updateClassificationJobInDb(job.id, { action: 'auto_moved' }).catch(() => {});
 
       await this.notify({
         title: 'Saran Disetujui',

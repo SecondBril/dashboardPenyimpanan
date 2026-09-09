@@ -57,7 +57,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   };
 
   return (
-    <div className="absolute right-4 top-16 z-50 w-full max-w-sm sm:max-w-md rounded-2xl glass-panel border border-white/15 bg-slate-900/98 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200 flex flex-col max-h-[550px]">
+    <div className="fixed inset-x-3 sm:inset-x-auto sm:right-4 top-16 z-50 w-auto sm:w-full sm:max-w-md rounded-2xl glass-panel border border-white/15 bg-slate-900/98 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200 flex flex-col max-h-[80vh] sm:max-h-[550px]">
       {/* Header */}
       <div className="p-4 border-b border-white/10 flex items-center justify-between">
         <div className="flex items-center gap-2">

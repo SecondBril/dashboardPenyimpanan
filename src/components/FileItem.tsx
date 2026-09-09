@@ -21,7 +21,8 @@ import {
   Edit2,
   Trash2,
   RefreshCw,
-  Sparkles
+  ArrowLeftRight,
+  Sparkles,
 } from 'lucide-react';
 
 interface FileItemProps {
@@ -32,6 +33,7 @@ interface FileItemProps {
   onReplaceContent: (file: UnifiedFile) => void;
   onDelete: (file: UnifiedFile) => void;
   onClassify: (file: UnifiedFile) => void;
+  onTransfer?: (file: UnifiedFile) => void;
 }
 
 export const FileItem: React.FC<FileItemProps> = ({
@@ -42,6 +44,7 @@ export const FileItem: React.FC<FileItemProps> = ({
   onReplaceContent,
   onDelete,
   onClassify,
+  onTransfer,
 }) => {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: file.id,
@@ -210,6 +213,19 @@ export const FileItem: React.FC<FileItemProps> = ({
                     <Download className="h-3.5 w-3.5 text-blue-400" />
                     <span>Unduh (Stream)</span>
                   </a>
+                )}
+
+                {onTransfer && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onTransfer(file);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-cyan-300 hover:text-cyan-100 hover:bg-cyan-500/20 transition-colors text-left"
+                  >
+                    <ArrowLeftRight className="h-3.5 w-3.5" />
+                    <span>Pindahkan / Salin {file.isFolder ? 'Folder' : 'File'}...</span>
+                  </button>
                 )}
 
                 {!file.isFolder && (

@@ -27,6 +27,7 @@ interface AccountColumnProps {
   onReplaceContent: (file: UnifiedFile) => void;
   onDeleteFile: (file: UnifiedFile) => void;
   onClassifyFile: (file: UnifiedFile) => void;
+  onTransferFile?: (file: UnifiedFile) => void;
 }
 
 interface BreadcrumbItem {
@@ -46,6 +47,7 @@ export const AccountColumn: React.FC<AccountColumnProps> = ({
   onReplaceContent,
   onDeleteFile,
   onClassifyFile,
+  onTransferFile,
 }) => {
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([
     { id: null, name: 'Root' },
@@ -91,7 +93,7 @@ export const AccountColumn: React.FC<AccountColumnProps> = ({
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col h-[750px] rounded-2xl glass-panel border transition-all duration-300 shadow-xl overflow-hidden relative ${
+      className={`flex flex-col h-[520px] sm:h-[620px] lg:h-[750px] rounded-2xl glass-panel border transition-all duration-300 shadow-xl overflow-hidden relative ${
         isOver
           ? 'border-cyan-400 ring-2 ring-cyan-400/40 bg-cyan-950/20 scale-[1.01]'
           : 'border-white/10 hover:border-white/20'
@@ -103,7 +105,12 @@ export const AccountColumn: React.FC<AccountColumnProps> = ({
           <div className="p-4 rounded-2xl bg-slate-900/90 border border-cyan-400 shadow-2xl flex flex-col items-center gap-2">
             <Upload className="h-7 w-7 text-cyan-400 animate-bounce" />
             <p className="text-sm font-bold text-white">Lepaskan untuk Pindahkan / Salin</p>
-            <p className="text-xs text-slate-400">Ke: {account.label} &gt; {currentFolder.name}</p>
+            <p className="text-xs text-slate-400">
+              Ke: <strong className="text-white">{account.label}</strong> &gt;{' '}
+              <span className="text-cyan-300 font-semibold">
+                {currentFolder.id ? `Folder "${currentFolder.name}"` : '📁 Root (Folder Utama / Direktori Terluar)'}
+              </span>
+            </p>
           </div>
         </div>
       )}
@@ -213,6 +220,7 @@ export const AccountColumn: React.FC<AccountColumnProps> = ({
               onReplaceContent={onReplaceContent}
               onDelete={onDeleteFile}
               onClassify={onClassifyFile}
+              onTransfer={onTransferFile}
             />
           ))
         )}

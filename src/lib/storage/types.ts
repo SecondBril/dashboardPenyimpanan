@@ -98,6 +98,8 @@ export interface OrganizationRule {
   createdAt: string;
 }
 
+export type ClassificationAction = 'auto_moved' | 'suggested' | 'ignored' | 'undone';
+
 export interface ClassificationJob {
   id: string;
   fileIndexId?: string;
@@ -108,7 +110,7 @@ export interface ClassificationJob {
   predictedTargetFolderId: string;
   predictedTargetFolderName: string;
   confidence: number;
-  action: 'auto_moved' | 'suggested' | 'ignored' | 'undone';
+  action: ClassificationAction;
   originalAccountId: string;
   originalFolderId: string | null;
   originalFileId: string;

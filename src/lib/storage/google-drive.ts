@@ -26,8 +26,9 @@ export class GoogleDriveAdapter implements StorageAdapter {
   }
 
   async listFiles(folderId: string | null = null): Promise<UnifiedFile[]> {
-    const parentQuery = folderId && folderId !== 'root' 
-      ? `'${folderId}' in parents` 
+    const rawFolderId = folderId ? this.extractRawId(folderId) : null;
+    const parentQuery = rawFolderId && rawFolderId !== 'root' 
+      ? `'${rawFolderId}' in parents` 
       : `'root' in parents`;
     const q = `trashed = false and ${parentQuery}`;
 
@@ -38,7 +39,7 @@ export class GoogleDriveAdapter implements StorageAdapter {
       pageSize: 100,
     });
 
-    return (res.data.files || []).map((f) => this.mapToFile(f, folderId));
+    return (res.data.files || []).map((f) => this.mapToFile(f, rawFolderId));
   }
 
   private extractRawId(id: string): string {
@@ -139,6 +140,15 @@ export class GoogleDriveAdapter implements StorageAdapter {
 
   async downloadStream(fileId: string): Promise<Buffer> {
     const rawId = this.extractRawId(fileId);
+    try {
+      const meta = await this.drive.files.get({ fileId: rawId, fields: 'id, name, mimeType' });
+      if (meta.data.mimeType === 'application/vnd.google-apps.folder') {
+        throw new Error(`Item "${meta.data.name}" adalah folder, bukan file tunggal. Pindahkan folder melalui transfer direktori.`);
+      }
+    } catch (e: any) {
+      if (e.message?.includes('adalah folder')) throw e;
+    }
+
     try {
       const res = await this.drive.files.get(
         { fileId: rawId, alt: 'media' },

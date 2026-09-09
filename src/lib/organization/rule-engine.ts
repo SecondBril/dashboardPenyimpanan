@@ -53,8 +53,16 @@ const DEFAULT_RULES: OrganizationRule[] = [
   },
 ];
 
+import { 
+  fetchRulesFromDb, 
+  insertRuleToDb, 
+  updateRuleInDb, 
+  deleteRuleInDb 
+} from '../supabase';
+
 declare global {
   var __orgRulesStore: OrganizationRule[] | undefined;
+  var __orgRulesInitialized: boolean | undefined;
 }
 
 function getRulesStore(): OrganizationRule[] {
@@ -65,7 +73,19 @@ function getRulesStore(): OrganizationRule[] {
 }
 
 export class RuleEngine {
+  public static async initFromDb(): Promise<void> {
+    if (!global.__orgRulesInitialized) {
+      const dbRules = await fetchRulesFromDb(DEFAULT_RULES);
+      global.__orgRulesStore = dbRules;
+      global.__orgRulesInitialized = true;
+    }
+  }
+
   public static getRules(): OrganizationRule[] {
+    // Proactively trigger async init if not yet done
+    if (!global.__orgRulesInitialized) {
+      this.initFromDb().catch(() => {});
+    }
     return getRulesStore();
   }
 
@@ -78,6 +98,16 @@ export class RuleEngine {
       createdAt: new Date().toISOString(),
     };
     getRulesStore().push(newRule);
+
+    // Persist to Supabase in background
+    insertRuleToDb(newRule).then((persisted) => {
+      if (persisted) {
+        const store = getRulesStore();
+        const idx = store.findIndex((r) => r.id === newRule.id);
+        if (idx !== -1) store[idx].id = persisted.id;
+      }
+    }).catch((err) => console.error('Error inserting rule to Supabase:', err));
+
     return newRule;
   }
 
@@ -86,6 +116,10 @@ export class RuleEngine {
     const index = store.findIndex((r) => r.id === id);
     if (index === -1) return null;
     store[index] = { ...store[index], ...updates };
+
+    // Persist update to Supabase
+    updateRuleInDb(id, updates).catch((err) => console.error('Error updating rule in Supabase:', err));
+
     return store[index];
   }
 
@@ -94,6 +128,10 @@ export class RuleEngine {
     const index = store.findIndex((r) => r.id === id);
     if (index === -1) return false;
     store.splice(index, 1);
+
+    // Delete in Supabase
+    deleteRuleInDb(id).catch((err) => console.error('Error deleting rule in Supabase:', err));
+
     return true;
   }
 

@@ -1,22 +1,36 @@
-import { UnifiedFile, ClassificationJob, SystemSettings } from '../storage/types';
+import { UnifiedFile, ClassificationJob, SystemSettings, ClassificationAction } from '../storage/types';
 import { RuleEngine } from './rule-engine';
 import { TransferEngine } from '../transfer/transfer-engine';
 import { Notifier, getClassificationJobsStore } from '../notifications/notifier';
 import { DEFAULT_ACCOUNTS } from '../storage/factory';
+import { 
+  insertClassificationJobToDb, 
+  fetchSettingsFromDb, 
+  updateSettingsInDb 
+} from '../supabase';
 
 // Default system settings
 declare global {
   var __systemSettingsStore: SystemSettings | undefined;
+  var __systemSettingsInitialized: boolean | undefined;
 }
+
+const DEFAULT_SETTINGS: SystemSettings = {
+  autoMoveThreshold: 0.85,
+  suggestThreshold: 0.50,
+  excludedFolders: [],
+  notificationChannels: ['in_app', 'telegram'],
+};
 
 export function getSystemSettings(): SystemSettings {
   if (!global.__systemSettingsStore) {
-    global.__systemSettingsStore = {
-      autoMoveThreshold: 0.85,
-      suggestThreshold: 0.50,
-      excludedFolders: [],
-      notificationChannels: ['in_app', 'telegram'],
-    };
+    global.__systemSettingsStore = { ...DEFAULT_SETTINGS };
+  }
+  if (!global.__systemSettingsInitialized) {
+    global.__systemSettingsInitialized = true;
+    fetchSettingsFromDb(DEFAULT_SETTINGS).then((dbSettings) => {
+      global.__systemSettingsStore = dbSettings;
+    }).catch(() => {});
   }
   return global.__systemSettingsStore;
 }
@@ -24,6 +38,7 @@ export function getSystemSettings(): SystemSettings {
 export function updateSystemSettings(updates: Partial<SystemSettings>): SystemSettings {
   const current = getSystemSettings();
   global.__systemSettingsStore = { ...current, ...updates };
+  updateSettingsInDb(global.__systemSettingsStore).catch(() => {});
   return global.__systemSettingsStore;
 }
 
@@ -65,6 +80,7 @@ export class SmartClassifier {
         };
 
         getClassificationJobsStore().unshift(job);
+        insertClassificationJobToDb(job).catch(() => {});
 
         // Execute move via TransferEngine
         await TransferEngine.createTransferJob({
@@ -126,6 +142,7 @@ export class SmartClassifier {
     };
 
     getClassificationJobsStore().unshift(job);
+    insertClassificationJobToDb(job).catch(() => {});
 
     if (action === 'auto_moved') {
       await TransferEngine.createTransferJob({
