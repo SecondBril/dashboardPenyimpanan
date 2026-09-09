@@ -71,7 +71,14 @@ export class AdapterFactory {
 
     // Production mode with Google Drive API
     if (account.provider === 'google_drive') {
-      const specificToken = process.env[`GOOGLE_REFRESH_TOKEN_${account.id}`];
+      // Ambil angka paling belakang tanpa leading zeros (contoh: a00...0001 -> "1")
+      const idMatch = account.id.match(/(\d+)$/);
+      const numericId = idMatch ? String(parseInt(idMatch[1], 10)) : null;
+
+      // Cek GOOGLE_REFRESH_TOKEN_1 dulu, jika tidak ada cek GOOGLE_REFRESH_TOKEN_<account.id>
+      const specificToken = (numericId && process.env[`GOOGLE_REFRESH_TOKEN_${numericId}`]) 
+        || process.env[`GOOGLE_REFRESH_TOKEN_${account.id}`];
+
       const fallbackToken = process.env.GOOGLE_REFRESH_TOKEN;
       const refreshToken = (specificToken && !specificToken.startsWith('your-')) 
         ? specificToken 
